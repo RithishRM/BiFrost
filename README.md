@@ -1,1 +1,2 @@
 # BiFrost
+Bifrost is a high-performance, privacy-preserving Federated Intrusion Detection System (FIDS) built entirely in Rust. It allows decentralized network nodes to collaboratively train advanced security models (LSTMs/Transformers) on local traffic flow slices without ever sharing raw data. Bifrost balances the distributed machine learning trilemma by combining Differential Privacy, 10x Top-k sparsification, and Byzantine-robust aggregation with a dual-mode gRPC and P2P gossip failover architecture to eliminate any single point of failure.
