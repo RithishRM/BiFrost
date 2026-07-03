@@ -1,0 +1,6 @@
+Result<Uniform<f32>, ndarray_rand::rand_distr::uniform::Error>: ndarray_rand::rand_distr::Distribution<_>
+ndarray_rand::rand_distr::Distribution<(A, B, C, D, E, F, G, H)>
+ndarray_rand::rand_distr::Distribution<(A, B, C, D, E, F, G, H, I)>
+ndarray_rand::rand_distr::Distribution<(A, B, C, D, E, F, G, H, I, J)>
+ndarray_rand::rand_distr::Distribution<(A, B, C, D, E, F, G, H, I, J, K)>
+ndarray_rand::rand_distr::Distribution<(A, B, C, D, E, F, G, H, I, J, K, L)>
