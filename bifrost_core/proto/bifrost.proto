@@ -1,0 +1,18 @@
+syntax = "proto3";
+package bifrost;
+
+message InboundGradient {
+    string node_id = 1;
+    uint32 round_id = 2;
+    repeated uint32 indices = 3;
+    repeated float values = 4;
+}
+
+message StreamResponse {
+    bool success = 1;
+    string message = 2;
+}
+
+service OperationalHub {
+    rpc StreamGradients (stream InboundGradient) returns (StreamResponse);
+}
