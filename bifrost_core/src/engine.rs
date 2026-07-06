@@ -278,7 +278,7 @@ pub fn normalize<P: AsRef<Path>>(
 
 pub fn train_local_model<P : AsRef<Path>>(
     path: P,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
     let window_size = 3;
 
     let (x_train, y_train) = load_and_preprocess_dataset(path, window_size)?;
@@ -311,7 +311,7 @@ pub fn train_local_model<P : AsRef<Path>>(
         println!("Batch normalization complete! Cleaned up gradient parameters vector generated.");
     }
 
-    Ok(())
+    Ok(batch_gradients)
 }
 
 pub fn load_and_preprocess_dataset<P : AsRef<Path>>(
