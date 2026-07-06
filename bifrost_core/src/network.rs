@@ -66,40 +66,25 @@ pub async fn run_server(port:u16) -> Result<(),Box<dyn std::error::Error>>{
     Ok(())
 }
 
-pub async fn run_mock_client(port: u16) -> Result<(), Box<dyn std::error::Error>> {
-    let server_addr = format!("http://127.0.0.1:{}", port);
-    println!("[CLIENT] Connecting to BiFrost server at {}...", server_addr);
+pub async fn run_real_client(port: u16,trained_gradients: Vec<f32>) -> Result<(), Box<dyn std::error::Error>> {
+    
+    let server_addr = format!("http://127.0.0.1:{}",port);
+    println!("[CLIENT] Connecting to Bifrost server at {}"server_addr);
 
-    // Establish the persistent HTTP/2 channel handshake
     let mut client = OperationalHubClient::connect(server_addr).await?;
 
-    // Create a bounded multi-producer, single-consumer channel to push messages into
-    let (tx, rx) = tokio::sync::mpsc::channel(32);
+    let (tx,rx) = tokio::sync::mpsc::channel(32);
 
-    // Convert the receiver end into a standard stream layout that tonic expects
     let request_stream = tokio_stream::wrappers::ReceiverStream::new(rx);
 
-    // Spawn a background runtime thread to populate data without blocking networking
     tokio::spawn(async move {
-        println!("[CLIENT] Simulating local AI gradient generation loop...");
-        for i in 1..=5 {
-            let mock_gradient = InboundGradient {
-                node_id: "arch-edge-node-1".to_string(),
-                round_id: 1,
-                indices: vec![0, 1, 2, 3, 4],
-                values: vec![0.1 * i as f32; 5], // Mocking varying float data
-            };
-
-            if tx.send(mock_gradient).await.is_err() {
-                eprintln!("[CLIENT] Internal pipe broken; stream receiver dropped.");
-                break;
-            }
-            tokio::time::sleep(tokio::time::Duration::from_millis(150)).await;
-        }
-        println!("[CLIENT] Finished generating mock updates. Closing pipeline.");
+        println!("[CLIENT] Preparing local AI trained gradients for transport...");
+        let gradient_packet = InboundGradient {node_id: "arch-edge-node-1".to_string(),round_id: 1,indices: (0..trained_gradients.len() as u32).collect(),values: trained_gradients, };
+    if tx.send(gradient_packet).await.is_err(){
+            eprintln!("[CLIENT] Transmission channel error; stream receiver dropped.");}
+            println!("[CLIENT] Real gradient payload pushed to gRPC network pipe.");
     });
 
-    // Fire the stream across the network socket
     let response = client.stream_gradients(request_stream).await?;
 
     println!(
