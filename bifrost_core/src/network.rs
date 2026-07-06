@@ -69,7 +69,7 @@ pub async fn run_server(port:u16) -> Result<(),Box<dyn std::error::Error>>{
 pub async fn run_real_client(port: u16,trained_gradients: Vec<f32>) -> Result<(), Box<dyn std::error::Error>> {
     
     let server_addr = format!("http://127.0.0.1:{}",port);
-    println!("[CLIENT] Connecting to Bifrost server at {}"server_addr);
+    println!("[CLIENT] Connecting to Bifrost server at {}",server_addr);
 
     let mut client = OperationalHubClient::connect(server_addr).await?;
 
