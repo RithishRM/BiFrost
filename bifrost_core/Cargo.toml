@@ -4,8 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+csv = "1.4.0"
 libp2p = "0.56.0"
 ndarray = "0.17.2"
+ndarray-rand = "0.16.0"
 rand = "0.10.1"
 rand_distr = "0.6.0"
 rayon = "1.12.0"

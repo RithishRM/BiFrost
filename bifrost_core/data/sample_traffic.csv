@@ -1,0 +1,6 @@
+Destination_Port,Flow_Duration,Total_Fwd_Packets,Total_Backward_Packets,Label
+80,5230,2,3,BENIGN
+443,12490,4,5,BENIGN
+22,892300,12,15,BENIGN
+80,120,1,0,DDoS
+53,4500,1,1,BENIGN
