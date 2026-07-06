@@ -2,17 +2,8 @@ mod protocol;
 mod engine;
 mod network;
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("=== BIFROST INITIALIZATION ===");
-
-    let test_port = 50051;
-
-    // 1. Spawn the Server into a background task thread
-
 use std::fs::File;
 use std::io::Write;
-use std::path::Path;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -43,21 +34,17 @@ Destination_Port,Flow_Duration,Total_Fwd_Packets,Total_Backward_Packets,Label
         }
     });
 
-
-    // 2. Pause brief moment to allow socket allocation on your Arch machine
+    // 4. Pause a brief moment to allow socket allocation on your Arch machine
     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
-    // 3. Trigger your mock client stream
-    network::run_mock_client(test_port).await?;
-
-    // Allow a split second for socket allocation
-    tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
-
-    // 4. Run the updated network client using the real data vector!
+    // 5. Run the updated network client using the real data vector!
     network::run_real_client(test_port, computed_gradients).await?;
 
-    // Clean up temporary files
-    std::fs::remove_file(test_csv_path)?;
+    // 6. Clean up temporary files from disk
+    if std::path::Path::new(test_csv_path).exists() {
+        std::fs::remove_file(test_csv_path)?;
+    }
+    
     println!("=== BIFROST COHESIVE SYSTEMS RUN SUCCESSFUL ===");
     Ok(())
 }
