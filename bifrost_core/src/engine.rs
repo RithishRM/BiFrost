@@ -6,6 +6,7 @@ use std::error::Error;
 use ndarray::{Array1, Array2, ArrayView2};
 use ndarray_rand::rand_distr::Uniform;
 use ndarray_rand::RandomExt;
+use rand_distr::{Normal, Distribution};
 
 #[derive( Serialize, Deserialize, Debug)]
 pub struct RawFlowRecord {
@@ -37,7 +38,6 @@ impl Bifrostmodel {
         let hh_bound = (6.0/(input_dim + hidden_dim) as f32).sqrt();
         let ho_bound = (6.0/(input_dim + hidden_dim) as f32).sqrt();
 
-        // Fixed: Added .unwrap() to cleanly unwrap Uniform instances across newer crate layers
         let iweights = Array2::random((input_dim, hidden_dim), Uniform::new(-ih_bound, ih_bound).unwrap());
         let rweights = Array2::random((hidden_dim, hidden_dim), Uniform::new(-hh_bound, hh_bound).unwrap());
         let oweights = Array2::random((hidden_dim, output_dim), Uniform::new(-ho_bound, ho_bound).unwrap());
@@ -128,8 +128,6 @@ impl Bifrostmodel {
 
             let h_prev_matrix = h_prev.to_shape((8, 1)).unwrap();
             
-            // Fixed: Created an explicit, owned array allocation for our 2D error matrix variable 
-            // to preserve its memory footprint throughout the matrix multiplication line
             let delta_h_owned = delta_h_current.clone();
             let delta_h_matrix = delta_h_owned.to_shape((1, 8)).unwrap();
             d_hhweight += &h_prev_matrix.dot(&delta_h_matrix);
@@ -163,6 +161,42 @@ impl Bifrostmodel {
         flat_grad
     }
 
+}
+
+pub fn L2NormCalc(gradients: &[f32]) -> f32 {
+    gradients
+        .iter()
+        .map(|&g| g * g)
+        .sum::<f32>()
+        .sqrt()
+}
+
+pub fn gradientClipping(gradVec : &mut Vec<f32>, max_norm : f32) {
+    //finding magnitude of the gradient vector
+    let mag : f32 = L2NormCalc(gradVec);
+
+    if mag > max_norm {
+        let scale = max_norm / mag;
+        for element in gradVec.iter_mut() {
+            *element *= scale;
+        }
+    }
+}
+
+pub fn generate_gaussian_noise(
+    max_norm: f32,
+    epsilon: f32,
+    delta: f32,
+    rng: &mut impl rand::Rng,
+) -> f32 {
+    let log_term = (1.25/delta).ln();
+    let numerator = max_norm * (2.0 * log_term).sqrt();
+    let sigma = numerator/epsilon;
+
+    let normal_dist = Normal::new(0.0, sigma)
+        .expect("Failed to initialize Normal distribution. Ensure sigma is valid and positive.");
+
+    normal_dist.sample(rng)
 }
 
 pub struct FlowSequenceWindow {
@@ -291,24 +325,38 @@ pub fn train_local_model<P : AsRef<Path>>(
     let mut batch_gradients = vec![0.0f32; 113];
     let sample_count = x_train.len() as f32;
 
+    let max_norm_c = 1.0f32;  //The maximum L2-norm clipping threshold parameter C
+    let epsilon = 1.0f32;     //Privacy budget loss parameter
+    let delta = 1e-5f32;      //Privacy failure tolerance threshold
+
+    let mut rng = rand::rng();
+
     for (sequence_slice, target_label) in x_train.iter().zip(y_train.iter()) {
         let (prediction, state_cache) = model.forward(sequence_slice);
 
         let (d_ih, d_hh, d_ho, d_hb, d_ob) = model.backward(sequence_slice, prediction, *target_label, &state_cache);
         
         // Layer Flattening Step
-        let sample_flat = model.flatten_gradients(&d_ih, &d_hh, &d_ho, &d_hb, &d_ob);
+        let mut sample_flat_gradients = model.flatten_gradients(&d_ih, &d_hh, &d_ho, &d_hb, &d_ob);
         
+        gradientClipping(&mut sample_flat_gradients, max_norm_c);
+
         // Thread-Safe Batch Accumulation Loop
-        for (batch_g, sample_g) in batch_gradients.iter_mut().zip(sample_flat.iter()) {
+        for (batch_g, sample_g) in batch_gradients.iter_mut().zip(sample_flat_gradients.iter()) {
             *batch_g += sample_g;
         }
     }
     if sample_count > 0.0 {
+        for g in batch_gradients.iter_mut(){
+            let noise_offset = generate_gaussian_noise(max_norm_c, epsilon, delta, &mut rng);
+            *g += noise_offset;
+        }
+
+        //Normalize the Anonymized parameters
         for g in batch_gradients.iter_mut() {
             *g /= sample_count;
         }
-        println!("Batch normalization complete! Cleaned up gradient parameters vector generated.");
+        println!("DP-SGD Batch normalization complete! Anonymized gradient parameters generated.");
     }
 
     Ok(batch_gradients)

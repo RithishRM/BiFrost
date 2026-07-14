@@ -1,39 +1,51 @@
 mod protocol;
 mod engine;
 mod network;
-mod aggregation; // <--- Register Task 1 & 2
+mod aggregation;
+
+use std::fs::File;
+use std::io::Write;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("=== BIFROST PHASE 2 INTEGRATION: ATTACK SIMULATION ===");
+    println!("=== BIFROST COHESIVE SYSTEM TEST ===");
+    let test_port = 50051;
 
-    // 1. Simulate a cluster matrix of collected 113-element node updates
-    // Let's assume we collected 5 nodes total, tolerating 1 attacker (f = 1)
-    let mut collected_gradients = vec![
-        vec![0.12f32; 113], // Node 0: Honest
-        vec![0.11f32; 113], // Node 1: Honest
-        vec![0.13f32; 113], // Node 2: Honest
-        vec![0.12f32; 113], // Node 3: Honest
-        vec![999.9f32; 113], // Node 4: MALICIOUS ATTACKER (Poisoned Gradients)
-    ];
+    // 1. Generate local traffic dataset simulation for Member 1's engine
+    let csv_data = "\
+Destination_Port,Flow_Duration,Total_Fwd_Packets,Total_Backward_Packets,Label
+80,1000.0,5,10,BENIGN
+443,2000.0,10,20,ATTACK
+8080,500.0,2,2,BENIGN
+22,5000.0,15,30,ATTACK
+";
+    let test_csv_path = "local_network_traffic.csv";
+    let mut file = File::create(test_csv_path)?;
+    file.write_all(csv_data.as_bytes())?;
 
-    println!("[MAIN] Ingested {} node updates into memory buffer.", collected_gradients.len());
-    println!("[MAIN] Active Threat Level Configured: 1 Byzantine Attacker Allowed.");
+    // 2. Execute Member 1's local training engine to extract real model gradients
+    println!("[MAIN] Triggering local RNN Training iteration...");
+    let computed_gradients = engine::train_local_model(test_csv_path)?;
+    println!("[MAIN] Engine complete. Vector Size: {} elements.", computed_gradients.len());
 
-    // 2. Pass the raw cluster matrix through our parallel Krum firewall
-    let byzantine_bounds = 1; 
-    if let Some(consensus_gradient) = aggregation::parallel_krum_filter(&collected_gradients, byzantine_bounds) {
-        println!("[MAIN] Success! Secure Consensus Vector Extracted.");
-        
-        // Verify that the chosen vector is NOT the attacker's massive numbers
-        if consensus_gradient[0] > 10.0 {
-            println!("❌ FAILURE: The firewall let the poisoned attacker through!");
-        } else {
-            println!("✅ SUCCESS: Krum completely neutralized Node 4 and selected a clean update baseline (value: {})!", consensus_gradient[0]);
+    // 3. Spawn gRPC Server in the background
+    tokio::spawn(async move {
+        if let Err(e) = network::run_server(test_port).await {
+            eprintln!("Server crashed: {:?}", e);
         }
-    } else {
-        println!("❌ FAILURE: Aggregation engine failed baseline validation.");
-    }
+    });
 
+    // 4. Pause a split second to allow socket allocation
+    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+
+    // 5. Run the client using the real anonymized vector!
+    network::run_real_client(test_port, computed_gradients).await?;
+
+    // Clean up temporary files
+    if std::path::Path::new(test_csv_path).exists() {
+        std::fs::remove_file(test_csv_path)?;
+    }
+    
+    println!("=== BIFROST RUN SUCCESSFUL ===");
     Ok(())
 }
