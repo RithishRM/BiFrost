@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::fs;
 
 #[derive( Serialize, Deserialize, Debug, PartialEq)]
 pub struct GradientUpdate{

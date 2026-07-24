@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tonic::{Request,Response,Status,Streaming};
-use tokio_stream::{Stream, StreamExt};
+use tokio_stream::StreamExt;
 
 pub mod proto {
     tonic::include_proto!("bifrost");
@@ -34,7 +34,7 @@ impl OperationalHub for BifrostServer{
                     let mut store = self.gradient_store.lock().await; //To lock shared mem
                     store.push(packet);
                 }
-                Err(err) => {
+                Err(_err) => {
                     eprintln!("[SERVER] Network Stream packet error !!!");
                     return Err(Status::internal("Stream broken during tranission"));
                 }

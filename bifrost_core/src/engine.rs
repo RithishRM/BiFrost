@@ -7,6 +7,10 @@ use ndarray::{Array1, Array2, ArrayView2};
 use ndarray_rand::rand_distr::Uniform;
 use ndarray_rand::RandomExt;
 use rand_distr::{Normal, Distribution};
+use std::cmp::Ordering;
+
+// Fixed: Imported the gRPC communication struct so the compiler recognizes it
+use crate::protocol::GradientUpdate;
 
 #[derive( Serialize, Deserialize, Debug)]
 pub struct RawFlowRecord {
@@ -199,6 +203,71 @@ pub fn generate_gaussian_noise(
     normal_dist.sample(rng)
 }
 
+// Fixed: Renamed to perfectly match main.rs expectations
+pub fn calculate_absolute_magnitudes(gradients : &[f32]) -> Vec<f32> {
+    gradients
+        .iter()
+        .map(|&g| g.abs())
+        .collect()
+}
+
+// Fixed: Renamed to perfectly match main.rs expectations, and corrected internal variable names
+pub fn calculate_top_k_threshold(magnitudes : &mut [f32], compression_ratio : f32) -> f32{
+    let n = magnitudes.len();
+    if n == 0{
+        return 0.0;
+    }
+    let top_elements = ((n as f32) * compression_ratio).round() as usize;
+    // Fixed: Removed the trailing semicolon
+    let top_elements = top_elements.clamp(1, n);
+
+    let target_index = n - top_elements;
+
+    magnitudes.select_nth_unstable_by(target_index, |a,b| {
+        a.partial_cmp(b).unwrap_or(Ordering::Equal)
+    });
+
+    magnitudes[target_index]
+}
+
+pub fn build_index_mask(gradients : &[f32], cut_off_threshold : f32) -> Vec<u32> {
+    gradients
+        .iter()
+        .enumerate()
+        .filter(|&(_, &g)| g.abs() >= cut_off_threshold)
+        .map(|(index, _)| index as u32)
+        .collect()
+}
+
+pub fn extract_top_k_values(gradients : &[f32], index_mask : &[u32]) -> Vec<f32>{
+    index_mask
+        .iter()
+        .map(|&idx| gradients[idx as usize])
+        .collect()
+}
+
+pub fn compress_and_package(
+    node_id: String,
+    round_id: u32,
+    gradients: &[f32],
+    compression_ratio: f32,
+) -> GradientUpdate {
+    let mut magnitudes = calculate_absolute_magnitudes(gradients);
+
+    let threshold = calculate_top_k_threshold(&mut magnitudes, compression_ratio);
+
+    let indices = build_index_mask(gradients, threshold);
+
+    let values = extract_top_k_values(gradients, &indices);
+
+    GradientUpdate {
+        node_id,
+        round_id,
+        indices,
+        values,
+    }
+}
+
 pub struct FlowSequenceWindow {
     window_size : usize,
     buffer : VecDeque<Vec<f32>>,
@@ -375,7 +444,7 @@ pub fn load_and_preprocess_dataset<P : AsRef<Path>>(
 
     let mut window = FlowSequenceWindow::new(window_size);
 
-    for (feature_vector, label) in features.into_iter().zip(labels.into_iter()) {
+    for (feature_vector, label) in features.into_iter().zip(labels) {
         if let Some(complete_sequence) = window.eviction_engine(feature_vector) {
             
             let flat_sequence: Vec<f32> = complete_sequence
