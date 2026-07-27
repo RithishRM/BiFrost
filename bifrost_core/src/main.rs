@@ -24,26 +24,64 @@ Destination_Port,Flow_Duration,Total_Fwd_Packets,Total_Backward_Packets,Label
     let mut file = File::create(test_csv_path)?;
     file.write_all(csv_data.as_bytes())?;
 
-    // 2. Execute local training engine (Phase 2 DP-SGD executes inside here)
-    println!("[MAIN] Triggering local RNN Training iteration...");
-    let computed_gradients = engine::train_local_model(test_csv_path)?;
-    println!("[MAIN] Engine complete. Raw Vector Size: {} elements.", computed_gradients.len());
+    // --- PHASE 4: INITIALIZE ERROR ACCUMULATOR ---
+    let parameter_count = 113; // The exact size of your flattened BiFrost model
+    let mut local_error_buffer = engine::ErrorAccumulator::new(parameter_count);
 
-    // 3. Phase 3: Top-k Sparsification Compression (10x Bandwidth Savings)
-    let compression_ratio = 0.10; // Target the top 10%
-    
-    let mut magnitudes = engine::calculate_absolute_magnitudes(&computed_gradients);
-    let threshold = engine::calculate_top_k_threshold(&mut magnitudes, compression_ratio);
-    
-    let compressed_indices = engine::build_index_mask(&computed_gradients, threshold);
-    let _compressed_values = engine::extract_top_k_values(&computed_gradients, &compressed_indices);
+    // This will hold our final output for the server transmission step
+    let mut final_computed_gradients = vec![];
 
-    println!(
-        "[MAIN] Compression complete! Sending {} active parameters out of {} (Threshold: {:.4})", 
-        compressed_indices.len(), 
-        computed_gradients.len(),
-        threshold
-    );
+    // ==========================================
+    // START TEST LOOP: Simulate 3 rounds of training
+    // ==========================================
+    for round in 1..=3 {
+        println!("\n--- STARTING ROUND {} ---", round);
+        
+        let mut computed_gradients = engine::train_local_model(test_csv_path)?;
+        
+        // Print the first index BEFORE merging
+        println!("[TEST] Grad[0] before merge: {:.6}", computed_gradients[0]);
+        
+        // --- PHASE 4: ERROR ACCUMULATION (MERGE) ---
+        // Merge past untransmitted errors into the fresh gradients
+        for (grad, past_error) in computed_gradients.iter_mut().zip(local_error_buffer.residue.iter()) {
+            *grad += past_error;
+        }
+        
+        // Print the first index AFTER merging
+        println!("[TEST] Grad[0] after merge:  {:.6}", computed_gradients[0]);
+
+        // 3. Phase 3: Top-k Sparsification Compression
+        let compression_ratio = 0.10; // Target the top 10%
+        let mut magnitudes = engine::calculate_absolute_magnitudes(&computed_gradients);
+        let threshold = engine::calculate_top_k_threshold(&mut magnitudes, compression_ratio);
+        
+        let compressed_indices = engine::build_index_mask(&computed_gradients, threshold);
+        let _compressed_values = engine::extract_top_k_values(&computed_gradients, &compressed_indices);
+
+        println!(
+            "[MAIN] Compression complete! Active parameters: {}/{} (Threshold: {:.4})", 
+            compressed_indices.len(), 
+            computed_gradients.len(),
+            threshold
+        );
+
+        // --- PHASE 4: CAPTURE AND SAVE THE RESIDUE ---
+        local_error_buffer.residue = engine::calculate_residue(&computed_gradients, &compressed_indices);
+        
+        // Verify the residue actually holds data now
+        let residue_sum: f32 = local_error_buffer.residue.iter().map(|&x| x.abs()).sum();
+        println!("[TEST] Total residue banked for next round: {:.4}", residue_sum);
+
+        // Save the current round's gradients so the client can transmit them after the loop ends
+        final_computed_gradients = computed_gradients;
+    }
+    // ==========================================
+    // END TEST LOOP
+    // ==========================================
+
+
+    println!("\n[MAIN] Training loops complete. Booting network layer...");
 
     // 4. Spawn Phase 1 gRPC Server in the background
     tokio::spawn(async move {
@@ -58,7 +96,7 @@ Destination_Port,Flow_Duration,Total_Fwd_Packets,Total_Backward_Packets,Label
     // 5. Transmit to Server
     // Note: Once you update `network::run_real_client` to accept your new sparse protocol, 
     // you will pass `compressed_indices` and `compressed_values` here instead of the raw vector!
-    network::run_real_client(test_port, computed_gradients).await?;
+    network::run_real_client(test_port, final_computed_gradients).await?;
 
     // 6. Cleanup local footprint
     if std::path::Path::new(test_csv_path).exists() {
