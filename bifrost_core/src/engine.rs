@@ -33,7 +33,8 @@ pub struct Bifrostmodel {
     howeight : Array2<f32>,
     hbias : Array1<f32>,
     obias : Array1<f32>,
-}
+
+    }
 
 impl Bifrostmodel {
     pub fn new(input_dim: usize, hidden_dim : usize, output_dim : usize) ->Self {
@@ -56,6 +57,29 @@ impl Bifrostmodel {
             obias: output_bias,
         }
     }
+    
+    ///Unflattens the weight 1D to 2D for nueral network transportation
+    pub fn unflatten_weights(flat_weights: &[f32]) -> (Array2<f32>, Array2<f32>, Array2<f32>, Array1<f32>, Array1<f32>) {
+        assert_eq!(flat_weights.len(), 113, "Master vector must be exactly 113 elements");
+        let ih = Array2::from_shape_vec((4, 8), flat_weights[0..32].to_vec()).unwrap();
+        let hh = Array2::from_shape_vec((8, 8), flat_weights[32..96].to_vec()).unwrap();
+        let ho = Array2::from_shape_vec((8, 1), flat_weights[96..104].to_vec()).unwrap();
+        let hb = Array1::from_vec(flat_weights[104..112].to_vec());
+        let ob = Array1::from_vec(flat_weights[112..113].to_vec());
+        (ih, hh, ho, hb, ob)
+}
+    
+    pub fn update_weights(&mut self, flat_master_weights: &[f32]) {
+        let (ih, hh, ho, hb, ob) = Self::unflatten_weights(flat_master_weights);
+        self.ihweight = ih;
+        self.hhweight = hh;
+        self.howeight = ho;
+        self.hbias = hb;
+        self.obias = ob;
+        println!("[ENGINE] Local model weights successfully overwritten with master consensus!");
+    }
+
+
 
     pub fn forward(&self, sequence : &[f32]) -> (f32, Vec<Array1<f32>>) {
         //zero copy reshaping
@@ -460,6 +484,7 @@ pub fn load_and_preprocess_dataset<P : AsRef<Path>>(
 
     Ok((sequenced_features, sequenced_labels))
 }
+
 
 #[cfg(test)]
 mod tests {

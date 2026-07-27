@@ -8,11 +8,22 @@ message InboundGradient {
     repeated float values = 4;
 }
 
-message StreamResponse {
-    bool success = 1;
-    string message = 2;
-}
-
 service OperationalHub {
     rpc StreamGradients (stream InboundGradient) returns (StreamResponse);
+}
+
+service GradientService{
+  rpc StreamGradients (stream GradientPacket) returns (StreamResponse);
+}
+
+message GradientPacket {
+  string node_id = 1;
+  uint32 sequence_number = 2;
+  repeated float gradient_chunk = 3;
+}
+
+message StreamResponse{
+  bool success = 1;
+  string message = 2;
+  repeated float master_weights = 3;
 }
