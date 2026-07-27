@@ -26,6 +26,31 @@ pub struct RawFlowRecord {
     pub Label : String,
 }
 
+pub struct ErrorAccumulator {
+    pub residue: Vec<f32>,
+}
+
+impl ErrorAccumulator {
+    pub fn new(capacity : usize) -> Self {
+        Self {
+            residue: vec![0.0; capacity],
+        }
+    }
+}
+
+pub fn calculate_residue(
+    accumulated_gradients: &[f32],
+    transmitted_indices: &[u32]
+) -> Vec<f32> {
+    let mut residue = accumulated_gradients.to_vec();
+
+    for &idx in transmitted_indices {
+        residue[idx as usize] = 0.0;
+    }
+
+    residue
+}
+
 pub struct Bifrostmodel {
     // i -> input, h -> hidden, o ->output, r -> recurring
     ihweight : Array2<f32>,
