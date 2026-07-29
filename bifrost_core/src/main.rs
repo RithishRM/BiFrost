@@ -1,8 +1,4 @@
-mod protocol;
-mod engine;
-mod network;
-mod aggregation;
-mod shuffler;
+use bifrost_core::{engine, network};
 
 use std::fs::File;
 use std::io::Write;

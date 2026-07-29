@@ -11,6 +11,8 @@ pub struct GradientUpdate{
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+
     #[test]
     fn test_serialization(){
         let g = GradientUpdate{
@@ -19,15 +21,16 @@ mod tests {
             indices : vec![0,1,2],
             values : vec![3.0, 4.0, 5.0]
         };
-        
+
         let serialized = serde_json::to_string(&g).unwrap();
-        
+
+        fs::create_dir_all("target").ok();
         fs::write("target/test_payload.json", serialized).unwrap();
-        
+
         let mesg : String = fs::read_to_string("target/test_payload.json").unwrap();
-        
+
         let ng : GradientUpdate = serde_json::from_str(&mesg).unwrap();
-        
+
         assert_eq!(g, ng, "testing {:?} and {:?}", g, ng);
     }
 }

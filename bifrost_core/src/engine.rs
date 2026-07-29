@@ -537,8 +537,7 @@ Destination_Port,Flow_Duration,Total_Fwd_Packets,Total_Backward_Packets,Label
         let window_size = 3;
         let preprocess_res = load_and_preprocess_dataset(test_path, window_size);
         assert!(preprocess_res.is_ok(), "Preprocessing pipeline crashed!");
-        
-        // Fixed: Added an underscore prefix to suppress the unused variable warning
+
         let (x_train, _y_train) = preprocess_res.unwrap();
         assert_eq!(x_train.len(), 2, "Should have extracted exactly 2 temporal window frames");
         assert_eq!(x_train[0].len(), 12, "Each flat sequence must contain exactly 12 metrics (3 steps x 4 features)");
@@ -550,4 +549,134 @@ Destination_Port,Flow_Duration,Total_Fwd_Packets,Total_Backward_Packets,Label
         // 5. Clean up the disk footprint
         std::fs::remove_file(test_path).unwrap();
     }
+
+    // --- PHASE 5: MALICIOUS / ANOMALOUS GRADIENT CLIPPING ---
+
+    #[test]
+    fn test_clipping_caps_malicious_exploding_gradient() {
+        // Simulate a malicious/anomalous gradient burst, e.g. a Byzantine or
+        // compromised node injecting an exploding-gradient style payload.
+        let mut malicious_gradients: Vec<f32> = vec![500.0, -800.0, 1200.0, 300.0, -50.0, 9999.0];
+        let max_norm = 1.0;
+
+        gradientClipping(&mut malicious_gradients, max_norm);
+
+        let resulting_norm = L2NormCalc(&malicious_gradients);
+
+        assert!(
+            resulting_norm <= max_norm + 1e-3,
+            "Clipped gradient norm {} exceeds max_norm {}",
+            resulting_norm,
+            max_norm
+        );
+
+        for &g in &malicious_gradients {
+            assert!(
+                g.is_finite(),
+                "Clipping produced a non-finite value: {} — program must not crash on anomalous input",
+                g
+            );
+        }
+    }
+
+    #[test]
+    fn test_clipping_leaves_small_gradients_untouched() {
+        // Sanity check: legitimate, well-behaved gradients should pass through unscaled.
+        let mut benign_gradients: Vec<f32> = vec![0.01, -0.02, 0.005, 0.0];
+        let original = benign_gradients.clone();
+        let max_norm = 1.0;
+
+        gradientClipping(&mut benign_gradients, max_norm);
+
+        assert_eq!(
+            benign_gradients, original,
+            "Clipping should not alter gradients that are already within the norm bound"
+        );
+    }
+
+    // --- PHASE 5: TOP-K COMPRESSOR EXACT SIZE VALIDATION ---
+
+    #[test]
+    fn test_topk_compression_exact_target_size() {
+        let param_count = 113;
+        let gradients: Vec<f32> = (0..param_count).map(|i| i as f32).collect();
+        let compression_ratio = 0.10;
+
+        let mut magnitudes = calculate_absolute_magnitudes(&gradients);
+        let threshold = calculate_top_k_threshold(&mut magnitudes, compression_ratio);
+
+        let indices = build_index_mask(&gradients, threshold);
+        let values = extract_top_k_values(&gradients, &indices);
+
+        let expected_count = ((param_count as f32) * compression_ratio)
+            .round()
+            .clamp(1.0, param_count as f32) as usize;
+
+        assert_eq!(
+            indices.len(),
+            expected_count,
+            "Top-k compressor did not produce the exact expected number of active parameters"
+        );
+        assert_eq!(values.len(), indices.len(), "Values length must match indices length");
+    }
+
+    #[test]
+    fn test_topk_compression_handles_all_zero_gradients() {
+        // Edge case: an all-zero gradient vector should not panic and should
+        // still respect the minimum-of-1 clamp.
+        let gradients: Vec<f32> = vec![0.0; 113];
+        let compression_ratio = 0.10;
+
+        let mut magnitudes = calculate_absolute_magnitudes(&gradients);
+        let threshold = calculate_top_k_threshold(&mut magnitudes, compression_ratio);
+        let indices = build_index_mask(&gradients, threshold);
+
+        assert!(!indices.is_empty(), "Even a degenerate all-zero vector must select at least 1 parameter");
+    }
+
+    // --- PHASE 5: ERROR-FEEDBACK ACCUMULATION OVER MULTIPLE ROUNDS ---
+
+#[test]
+fn test_error_accumulation_over_ten_rounds_reaches_threshold() {
+    let parameter_count = 113;
+    let mut error_buffer = ErrorAccumulator::new(parameter_count);
+    let compression_ratio = 0.10;
+
+    // Use varied small magnitudes (not all identical) so top-k has a genuine
+    // top 10% and a genuine untransmitted remainder each round.
+    let small_round_gradient: Vec<f32> = (0..parameter_count)
+        .map(|i| 0.001 + (i as f32) * 0.0005)
+        .collect();
+
+    let mut residue_history: Vec<f32> = Vec::with_capacity(10);
+
+    for round in 1..=10 {
+        let mut round_gradients = small_round_gradient.clone();
+
+        for (g, past_error) in round_gradients.iter_mut().zip(error_buffer.residue.iter()) {
+            *g += past_error;
+        }
+
+        let mut magnitudes = calculate_absolute_magnitudes(&round_gradients);
+        let threshold = calculate_top_k_threshold(&mut magnitudes, compression_ratio);
+        let indices = build_index_mask(&round_gradients, threshold);
+
+        error_buffer.residue = calculate_residue(&round_gradients, &indices);
+        let residue_sum: f32 = error_buffer.residue.iter().map(|x| x.abs()).sum();
+        residue_history.push(residue_sum);
+
+        println!("[TEST] Round {} residue sum: {:.6}", round, residue_sum);
+    }
+
+    let first = residue_history.first().copied().unwrap_or(0.0);
+    let last = residue_history.last().copied().unwrap_or(0.0);
+
+    assert!(last > 0.0, "Residue must be non-zero after 10 rounds of small updates");
+    assert!(
+        last >= first,
+        "Residue should accumulate (non-decreasing) across rounds of untransmitted small updates: first={:.6}, last={:.6}",
+        first,
+        last
+    );
+}
 }
