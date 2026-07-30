@@ -97,7 +97,7 @@ pub async fn run_real_client(port: u16,gradients_payload: Vec<f32>,node_id: &str
     let response = client.stream_gradients(outbound_stream).await?;
     let res = response.into_inner();
 
-    Ok((res.master_weights))
+    Ok(res.master_weights)
 }
 
 

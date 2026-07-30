@@ -12,18 +12,18 @@ use std::cmp::Ordering;
 // Fixed: Imported the gRPC communication struct so the compiler recognizes it
 use crate::protocol::GradientUpdate;
 
-#[derive( Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct RawFlowRecord {
-    #[serde(rename = "Destination_Port")]
-    pub Destination_Port : u32,
-    #[serde(rename = "Flow_Duration")]
-    pub Flow_Duration : f32,
-    #[serde(rename = "Total_Fwd_Packets")]
-    pub Total_Fwd_Packets : u32,
-    #[serde(rename = "Total_Backward_Packets")]
-    pub Total_Backward_Packets : u32,
+    #[serde(rename = "Destination Port")]
+    pub Destination_Port: u32,
+    #[serde(rename = "Flow Duration")]
+    pub Flow_Duration: f32,
+    #[serde(rename = "Total Fwd Packets")]
+    pub Total_Fwd_Packets: u32,
+    #[serde(rename = "Total Backward Packets")]
+    pub Total_Backward_Packets: u32,
     #[serde(rename = "Label")]
-    pub Label : String,
+    pub Label: String,
 }
 
 pub struct ErrorAccumulator {
@@ -354,13 +354,16 @@ pub fn max_bounds<P: AsRef<Path>>(path: P) -> Result<RawFlowRecord, Box<dyn Erro
     let mut max_bwd_packets : u32 = 0;
 
     let file = File::open(path)?;
-    let mut rdr = csv::Reader::from_reader(file);
+    let mut rdr = csv::ReaderBuilder::new()
+        .trim(csv::Trim::All)
+        .from_reader(file);
     
     for record_result in rdr.deserialize::<RawFlowRecord>() {
         let record = record_result?;
-        
-        if record.Flow_Duration > max_duration {
-            max_duration = record.Flow_Duration;
+        let duration = sanitize_f32(record.Flow_Duration);
+
+        if duration > max_duration {
+            max_duration = duration;
         }
         
         if record.Total_Fwd_Packets > max_fwd_packets {
@@ -380,6 +383,14 @@ pub fn max_bounds<P: AsRef<Path>>(path: P) -> Result<RawFlowRecord, Box<dyn Erro
     })
 }
 
+fn sanitize_f32(value: f32) -> f32 {
+    if value.is_finite() {
+        value
+    } else {
+        0.0
+    }
+}
+
 pub fn normalize<P: AsRef<Path>>(
     path: P,
     bounds : &RawFlowRecord,
@@ -389,14 +400,17 @@ pub fn normalize<P: AsRef<Path>>(
     let mut all_labels = Vec::new();
 
     let file = File::open(path)?;
-    let mut rdr = csv::Reader::from_reader(file);
+    let mut rdr = csv::ReaderBuilder::new()
+        .trim(csv::Trim::All)
+        .from_reader(file);
 
     //Applying Transformation mapping
     for record_result in rdr.deserialize::<RawFlowRecord>(){
         let record = record_result?;
+        let flow_duration = sanitize_f32(record.Flow_Duration);
 
-        let duration_scaling = if record.Flow_Duration > 0.0{
-            record.Flow_Duration/ bounds.Flow_Duration
+        let duration_scaling = if flow_duration > 0.0 && bounds.Flow_Duration > 0.0{
+            flow_duration/ bounds.Flow_Duration
         }else{
             0.0
         };
@@ -520,7 +534,7 @@ mod tests {
     fn test_bifrost_engine_pipeline() {
         // 1. Create a dummy CSV payload matching your RawFlowRecord keys
         let csv_data = "\
-Destination_Port,Flow_Duration,Total_Fwd_Packets,Total_Backward_Packets,Label
+Destination Port,Flow Duration,Total Fwd Packets,Total Backward Packets,Label
 80,1000.0,5,10,BENIGN
 443,2000.0,10,20,ATTACK
 8080,500.0,2,2,BENIGN

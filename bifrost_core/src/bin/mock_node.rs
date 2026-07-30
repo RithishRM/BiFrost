@@ -4,28 +4,28 @@ use bifrost_core::engine::{
 };
 use bifrost_core::protocol::GradientUpdate;
 
-use std::fs::{self, File};
-use std::io::Write;
+use std::fs;
 use std::path::Path;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== BIFROST MOCK NODE: PHASE 5 INDEPENDENT CORE TEST ===");
 
     // --- 1. DATA INGESTION ---
-    let csv_data = "\
-Destination_Port,Flow_Duration,Total_Fwd_Packets,Total_Backward_Packets,Label
-80,1000.0,5,10,BENIGN
-443,2000.0,10,20,ATTACK
-8080,500.0,2,2,BENIGN
-22,5000.0,15,30,ATTACK
-21,7000.0,25,40,ATTACK
-53,300.0,1,1,BENIGN
-";
-    let csv_path = "mock_node_traffic.csv";
-    {
-        let mut file = File::create(csv_path)?;
-        file.write_all(csv_data.as_bytes())?;
+    // Real CICIDS2017 data (MachineLearningCSV.zip, unzipped into
+    // data/MachineLearningCVE/). Using Monday since it's the smallest file
+    // and benign-only, good for a first correctness pass.
+    let csv_path = "data/MachineLearningCVE/Monday-WorkingHours.pcap_ISCX.csv";
+
+    if !Path::new(csv_path).exists() {
+        return Err(format!(
+            "Dataset not found at {}. Download MachineLearningCSV.zip from CICIDS2017 \
+             and unzip it into data/MachineLearningCVE/",
+            csv_path
+        )
+        .into());
     }
+
+    println!("[MOCK NODE] Using real CICIDS2017 data: {}", csv_path);
 
     let parameter_count = 113;
     let mut error_buffer = ErrorAccumulator::new(parameter_count);
@@ -84,10 +84,8 @@ Destination_Port,Flow_Duration,Total_Fwd_Packets,Total_Backward_Packets,Label
         println!("{}", serialized);
     }
 
-    // Cleanup local dataset
-    if Path::new(csv_path).exists() {
-        fs::remove_file(csv_path)?;
-    }
+    // NOTE: no cleanup of csv_path anymore — it's the real downloaded
+    // dataset now, not a temp file we generated, so we leave it on disk.
 
     println!("\n=== MOCK NODE RUN COMPLETE — NO NETWORKING CODE EXECUTED ===");
     Ok(())

@@ -1,7 +1,5 @@
 use bifrost_core::{engine, network};
 
-use std::fs::File;
-use std::io::Write;
 use std::time::Duration;
 
 #[tokio::main]
@@ -11,17 +9,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let threshold = 1; // Batch size threshold for MixNet shuffling
     let byzantine_bounds = 0; // Number of Byzantine nodes to tolerate in Krum
 
-    // 1. Generate local traffic dataset simulation
-    let csv_data = "\
-Destination_Port,Flow_Duration,Total_Fwd_Packets,Total_Backward_Packets,Label
-80,1000.0,5,10,BENIGN
-443,2000.0,10,20,ATTACK
-8080,500.0,2,2,BENIGN
-22,5000.0,15,30,ATTACK
-";
-    let test_csv_path = "local_network_traffic.csv";
-    let mut file = File::create(test_csv_path)?;
-    file.write_all(csv_data.as_bytes())?;
+    // 1. Point at the real CICIDS2017 dataset (downloaded MachineLearningCSV.zip,
+    // unzipped into data/MachineLearningCVE/). Using Monday since it's the
+    // smallest file and benign-only, good for a first correctness pass.
+    let test_csv_path = "data/MachineLearningCVE/Monday-WorkingHours.pcap_ISCX.csv";
+
+    if !std::path::Path::new(test_csv_path).exists() {
+        return Err(format!(
+            "Dataset not found at {}. Download MachineLearningCSV.zip from CICIDS2017 \
+             and unzip it into data/MachineLearningCVE/",
+            test_csv_path
+        )
+        .into());
+    }
+
+    println!("[MAIN] Using dataset: {}", test_csv_path);
 
     // --- PHASE 3: INITIALIZE LOCAL MODEL ---
     let input_dim = 4;
@@ -97,10 +99,8 @@ Destination_Port,Flow_Duration,Total_Fwd_Packets,Total_Backward_Packets,Label
     // END MULTI-ROUND LOOP
     // =========================================================================
 
-    // Cleanup temporary CSV dataset
-    if std::path::Path::new(test_csv_path).exists() {
-        std::fs::remove_file(test_csv_path)?;
-    }
+    // NOTE: no cleanup of test_csv_path anymore — it's the real downloaded
+    // dataset now, not a temp file we generated, so we leave it on disk.
 
     println!("\n=== BIFROST INTEGRATED SYSTEM RUN SUCCESSFUL ===");
     Ok(())
