@@ -9,7 +9,6 @@ use ndarray_rand::RandomExt;
 use rand_distr::{Normal, Distribution};
 use std::cmp::Ordering;
 
-// Fixed: Imported the gRPC communication struct so the compiler recognizes it
 use crate::protocol::GradientUpdate;
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -252,7 +251,6 @@ pub fn generate_gaussian_noise(
     normal_dist.sample(rng)
 }
 
-// Fixed: Renamed to perfectly match main.rs expectations
 pub fn calculate_absolute_magnitudes(gradients : &[f32]) -> Vec<f32> {
     gradients
         .iter()
@@ -260,14 +258,12 @@ pub fn calculate_absolute_magnitudes(gradients : &[f32]) -> Vec<f32> {
         .collect()
 }
 
-// Fixed: Renamed to perfectly match main.rs expectations, and corrected internal variable names
 pub fn calculate_top_k_threshold(magnitudes : &mut [f32], compression_ratio : f32) -> f32{
     let n = magnitudes.len();
     if n == 0{
         return 0.0;
     }
     let top_elements = ((n as f32) * compression_ratio).round() as usize;
-    // Fixed: Removed the trailing semicolon
     let top_elements = top_elements.clamp(1, n);
 
     let target_index = n - top_elements;
@@ -532,7 +528,6 @@ mod tests {
 
     #[test]
     fn test_bifrost_engine_pipeline() {
-        // 1. Create a dummy CSV payload matching your RawFlowRecord keys
         let csv_data = "\
 Destination Port,Flow Duration,Total Fwd Packets,Total Backward Packets,Label
 80,1000.0,5,10,BENIGN
@@ -541,13 +536,10 @@ Destination Port,Flow Duration,Total Fwd Packets,Total Backward Packets,Label
 22,5000.0,15,30,ATTACK
 ";
 
-        // 2. Write it out to a temporary local test file
         let test_path = Path::new("test_flows.csv");
         let mut file = File::create(test_path).unwrap();
         file.write_all(csv_data.as_bytes()).unwrap();
 
-        // 3. Test data ingestion & sliding window flattening
-        // With 4 rows and window_size = 3, we should get exactly 2 sequence windows
         let window_size = 3;
         let preprocess_res = load_and_preprocess_dataset(test_path, window_size);
         assert!(preprocess_res.is_ok(), "Preprocessing pipeline crashed!");
@@ -556,20 +548,14 @@ Destination Port,Flow Duration,Total Fwd Packets,Total Backward Packets,Label
         assert_eq!(x_train.len(), 2, "Should have extracted exactly 2 temporal window frames");
         assert_eq!(x_train[0].len(), 12, "Each flat sequence must contain exactly 12 metrics (3 steps x 4 features)");
 
-        // 4. Test execution model math (Forward + Backward + Batch Flattening)
         let train_res = train_local_model(test_path);
         assert!(train_res.is_ok(), "Local training execution loop failed!");
 
-        // 5. Clean up the disk footprint
         std::fs::remove_file(test_path).unwrap();
     }
 
-    // --- PHASE 5: MALICIOUS / ANOMALOUS GRADIENT CLIPPING ---
-
     #[test]
     fn test_clipping_caps_malicious_exploding_gradient() {
-        // Simulate a malicious/anomalous gradient burst, e.g. a Byzantine or
-        // compromised node injecting an exploding-gradient style payload.
         let mut malicious_gradients: Vec<f32> = vec![500.0, -800.0, 1200.0, 300.0, -50.0, 9999.0];
         let max_norm = 1.0;
 
@@ -607,8 +593,6 @@ Destination Port,Flow Duration,Total Fwd Packets,Total Backward Packets,Label
             "Clipping should not alter gradients that are already within the norm bound"
         );
     }
-
-    // --- PHASE 5: TOP-K COMPRESSOR EXACT SIZE VALIDATION ---
 
     #[test]
     fn test_topk_compression_exact_target_size() {
@@ -648,16 +632,12 @@ Destination Port,Flow Duration,Total Fwd Packets,Total Backward Packets,Label
         assert!(!indices.is_empty(), "Even a degenerate all-zero vector must select at least 1 parameter");
     }
 
-    // --- PHASE 5: ERROR-FEEDBACK ACCUMULATION OVER MULTIPLE ROUNDS ---
-
 #[test]
 fn test_error_accumulation_over_ten_rounds_reaches_threshold() {
     let parameter_count = 113;
     let mut error_buffer = ErrorAccumulator::new(parameter_count);
     let compression_ratio = 0.10;
 
-    // Use varied small magnitudes (not all identical) so top-k has a genuine
-    // top 10% and a genuine untransmitted remainder each round.
     let small_round_gradient: Vec<f32> = (0..parameter_count)
         .map(|i| 0.001 + (i as f32) * 0.0005)
         .collect();
